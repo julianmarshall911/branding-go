@@ -72,19 +72,23 @@ func AdaptLogoForBackground(logoDataURL, navBgHex string) (string, error) {
 		bounds = nrgba.Bounds()
 	}
 
-	// Adapt pixels: if a pixel's brightness is too close to the nav background,
-	// invert its lightness so it becomes visible
-	threshold := 0.10 * 255 // ~25.5
+	// Adapt pixels: if a pixel is dark and desaturated, it won't be visible
+	// on the dark nav. Saturated colors (reds, blues) are left alone.
+	darkThreshold := 80.0
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
 			c := nrgba.NRGBAAt(x, y)
 			if c.A < 10 {
 				continue // skip transparent
 			}
+			// Skip colorful pixels — they have visual contrast even if dark
+			rgb := RGB{c.R, c.G, c.B}
+			if rgb.ToHSL().S > 0.3 {
+				continue
+			}
 			pxGray := grayscale(c.R, c.G, c.B)
-			if math.Abs(pxGray-navGray) < threshold {
-				// Replace with inverted lightness
-				lightGray := uint8(math.Max(0, math.Min(255, 255-pxGray)))
+			if pxGray < darkThreshold {
+				lightGray := uint8(math.Max(180, math.Min(255, 255-pxGray)))
 				nrgba.SetNRGBA(x, y, color.NRGBA{R: lightGray, G: lightGray, B: lightGray, A: c.A})
 			}
 		}
@@ -115,7 +119,9 @@ func adaptSVGForBackground(logoDataURL string, navGray float64) (string, error) 
 	}
 	svgStr := string(svgBytes)
 
-	threshold := 255 * 0.10 // brightness threshold
+	// A color is "too dark to see" if it's dark AND close to the dark nav background.
+	// Both the color and the nav must be in the dark range (< 80 brightness).
+	threshold := 80.0 // any color with brightness below this on a dark nav gets lightened
 
 	// Replace hex colors in fill and stroke attributes
 	replaceColor := func(hex string) string {
@@ -123,13 +129,19 @@ func adaptSVGForBackground(logoDataURL string, navGray float64) (string, error) 
 		if err != nil {
 			return hex
 		}
+		hsl := c.ToHSL()
 		pxGray := grayscale(c.R, c.G, c.B)
-		if math.Abs(pxGray-navGray) < threshold {
-			// Too close to nav background — invert lightness
-			lightGray := uint8(math.Max(0, math.Min(255, 255-pxGray)))
+		// Keep colorful/saturated colors — they have visual contrast even if dark
+		if hsl.S > 0.3 {
+			return hex
+		}
+		// Replace if the color is dark (below threshold) — it won't be visible on the dark nav
+		if pxGray < threshold {
+			// Invert to a light version
+			lightGray := uint8(math.Max(180, math.Min(255, 255-pxGray)))
 			return fmt.Sprintf("#%02x%02x%02x", lightGray, lightGray, lightGray)
 		}
-		return hex // enough contrast, keep original
+		return hex // bright enough, keep original
 	}
 
 	// Replace colors in fill="..." and stroke="..." attributes
