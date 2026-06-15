@@ -33,6 +33,11 @@ func AdaptLogoForBackground(logoDataURL, navBgHex string) (string, error) {
 	}
 	navGray := grayscale(navBg.R, navBg.G, navBg.B)
 
+	// Skip adaptation if nav background is light — logo is likely already visible
+	if navGray > 60 {
+		return logoDataURL, nil
+	}
+
 	bounds := img.Bounds()
 	w, h := bounds.Dx(), bounds.Dy()
 	if w < 4 || h < 4 {

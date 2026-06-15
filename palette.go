@@ -8,6 +8,8 @@ package branding
 type Palette struct {
 	// Primary is the main brand color.
 	Primary string `json:"primary"`
+	// PrimaryContrast is black or white, whichever has better contrast on primary.
+	PrimaryContrast string `json:"primary_contrast"`
 	// Interactive is a lighter variant for hover states and links.
 	Interactive string `json:"interactive"`
 	// NavBg is the navigation background color.
@@ -53,8 +55,9 @@ var (
 // DefaultPalette returns the default palette when no brand color can be extracted.
 func DefaultPalette() Palette {
 	return Palette{
-		Primary:     "#63b3ed",
-		Interactive: "#90cdf4",
+		Primary:         "#63b3ed",
+		PrimaryContrast: "#000000",
+		Interactive:     "#90cdf4",
 		NavBg:       darkBlueBg.navBg,
 		NavBorder:   darkBlueBg.navBorder,
 		Background:  darkBlueBg.background,
@@ -101,8 +104,9 @@ func DerivePalette(primary string) Palette {
 	interactive := Lighten(effectivePrimary, 0.15)
 
 	return Palette{
-		Primary:     effectivePrimary,
-		Interactive: interactive,
+		Primary:         effectivePrimary,
+		PrimaryContrast: ContrastColor(effectivePrimary),
+		Interactive:     interactive,
 		NavBg:       bg.navBg,
 		NavBorder:   bg.navBorder,
 		Background:  bg.background,

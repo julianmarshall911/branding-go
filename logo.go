@@ -35,18 +35,18 @@ var (
 	reLinkIcon = regexp.MustCompile(`(?i)<link[^>]*rel\s*=\s*"([^"]*)"[^>]*href\s*=\s*"([^"]+)"`)
 	reLinkIconAlt = regexp.MustCompile(`(?i)<link[^>]*href\s*=\s*"([^"]+)"[^>]*rel\s*=\s*"([^"]*)"`)
 
-	// Tiny icon patterns to reject
-	reTinyIcon = regexp.MustCompile(`(?i)flag|lang-|language|16x16|24x24`)
+	// Tiny icon and social media patterns to reject
+	reTinyIcon = regexp.MustCompile(`(?i)flag|lang-|language|social|twitter|facebook|16x16|20x20|24x24`)
 )
 
 // detectLogo finds the best logo URL from HTML using priority-ordered detection.
 func detectLogo(html, origin string) string {
 	// 1. JSON-LD schema.org logo
 	if m := reJSONLD.FindStringSubmatch(html); len(m) > 1 {
-		return resolveURL(m[1], origin)
+		return resolveURL(unescapeJSONLD(m[1]), origin)
 	}
 	if m := reJSONLDSimple.FindStringSubmatch(html); len(m) > 1 {
-		return resolveURL(m[1], origin)
+		return resolveURL(unescapeJSONLD(m[1]), origin)
 	}
 
 	// 2. <a> with "logo" class/id containing <img>
@@ -92,6 +92,11 @@ func filterLogoURL(href, origin string) string {
 		return ""
 	}
 	return resolveURL(href, origin)
+}
+
+// unescapeJSONLD handles escaped forward slashes in JSON-LD values.
+func unescapeJSONLD(s string) string {
+	return strings.ReplaceAll(s, "\\/", "/")
 }
 
 // findLinkHref finds the href of a <link> tag with the given rel value.

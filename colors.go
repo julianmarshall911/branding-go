@@ -168,6 +168,20 @@ func HueDiff(a, b string) float64 {
 	return math.Abs(ha - hb)
 }
 
+// ContrastColor returns "#000000" or "#ffffff" based on WCAG luminance,
+// for readable text on a colored background.
+func ContrastColor(hex string) string {
+	c, err := ParseHex(hex)
+	if err != nil {
+		return "#ffffff"
+	}
+	lum := (0.299*float64(c.R) + 0.587*float64(c.G) + 0.114*float64(c.B)) / 255
+	if lum > 0.5 {
+		return "#000000"
+	}
+	return "#ffffff"
+}
+
 // isRedHue returns true if the hue is in the red range (danger zone for UI).
 func isRedHue(h float64) bool {
 	return h <= 30 || h >= 330
