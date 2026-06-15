@@ -86,20 +86,26 @@ func Extract(siteURL string) (*Result, error) {
 	// Extract favicon
 	result.FaviconURL = extractFavicon(html, origin)
 
-	// Detect logo
-	logoURL := detectLogo(html, origin)
-	if logoURL != "" {
-		if dataURL, err := downloadAsDataURL(logoURL); err == nil {
-			result.LogoDataURL = dataURL
-		}
-	}
-
 	// Extract accent color from CSS first (preferred over logo)
 	accent := ExtractAccentFromHTML(html)
 	if accent != "" {
 		result.Palette = DerivePalette(accent)
 	} else {
 		result.Palette = DefaultPalette()
+	}
+
+	// Detect and adapt logo for the derived nav background
+	logoURL := detectLogo(html, origin)
+	if logoURL != "" {
+		if dataURL, err := downloadAsDataURL(logoURL); err == nil {
+			// Adapt logo pixels for visibility on the dark nav background
+			adapted, err := AdaptLogoForBackground(dataURL, result.Palette.NavBg)
+			if err == nil && adapted != "" {
+				result.LogoDataURL = adapted
+			} else {
+				result.LogoDataURL = dataURL
+			}
+		}
 	}
 
 	return result, nil
