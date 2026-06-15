@@ -13,20 +13,15 @@ import (
 	"image/jpeg"
 	"image/png"
 	"math"
+	"regexp"
 	"strings"
 )
 
-// AdaptLogoForBackground adjusts logo pixels so they're visible on a dark nav background.
-// It detects the logo's own background color, trims to content, and replaces pixels
-// whose brightness is too close to the nav background with a lighter variant.
-// Returns a PNG data URL.
+// AdaptLogoForBackground adjusts a logo so it's visible on a dark nav background.
+// For SVGs: parses the XML and replaces dark fill/stroke colors with light ones.
+// For raster images: per-pixel brightness adjustment.
+// Returns the adapted logo as a data URL.
 func AdaptLogoForBackground(logoDataURL, navBgHex string) (string, error) {
-	// Decode data URL
-	img, err := decodeDataURL(logoDataURL)
-	if err != nil {
-		return logoDataURL, nil // can't adapt, return original
-	}
-
 	navBg, err := ParseHex(navBgHex)
 	if err != nil {
 		return logoDataURL, nil
@@ -36,6 +31,17 @@ func AdaptLogoForBackground(logoDataURL, navBgHex string) (string, error) {
 	// Skip adaptation if nav background is light — logo is likely already visible
 	if navGray > 60 {
 		return logoDataURL, nil
+	}
+
+	// SVGs need XML-level color replacement (can't do pixel manipulation)
+	if strings.Contains(logoDataURL, "image/svg") {
+		return adaptSVGForBackground(logoDataURL, navGray)
+	}
+
+	// Decode raster data URL
+	img, err := decodeDataURL(logoDataURL)
+	if err != nil {
+		return logoDataURL, nil // can't adapt, return original
 	}
 
 	bounds := img.Bounds()
@@ -93,6 +99,73 @@ func AdaptLogoForBackground(logoDataURL, navBgHex string) (string, error) {
 	encoded := base64.StdEncoding.EncodeToString(buf.Bytes())
 	return "data:image/png;base64," + encoded, nil
 }
+
+// adaptSVGForBackground parses SVG XML and replaces dark fill/stroke colors
+// with lighter versions, preserving colors that already have good contrast.
+func adaptSVGForBackground(logoDataURL string, navGray float64) (string, error) {
+	// Extract SVG content from data URL
+	comma := strings.Index(logoDataURL, ",")
+	if comma < 0 {
+		return logoDataURL, nil
+	}
+	header := logoDataURL[5:comma]
+	svgBytes, err := base64.StdEncoding.DecodeString(logoDataURL[comma+1:])
+	if err != nil {
+		return logoDataURL, nil
+	}
+	svgStr := string(svgBytes)
+
+	threshold := 255 * 0.10 // brightness threshold
+
+	// Replace hex colors in fill and stroke attributes
+	replaceColor := func(hex string) string {
+		c, err := ParseHex(hex)
+		if err != nil {
+			return hex
+		}
+		pxGray := grayscale(c.R, c.G, c.B)
+		if math.Abs(pxGray-navGray) < threshold {
+			// Too close to nav background — invert lightness
+			lightGray := uint8(math.Max(0, math.Min(255, 255-pxGray)))
+			return fmt.Sprintf("#%02x%02x%02x", lightGray, lightGray, lightGray)
+		}
+		return hex // enough contrast, keep original
+	}
+
+	// Replace colors in fill="..." and stroke="..." attributes
+	svgStr = reSVGFill.ReplaceAllStringFunc(svgStr, func(match string) string {
+		return reHexInAttr.ReplaceAllStringFunc(match, func(hex string) string {
+			return replaceColor(hex)
+		})
+	})
+
+	// Replace colors in style="..." attributes (fill:, stroke:, color:)
+	svgStr = reSVGStyle.ReplaceAllStringFunc(svgStr, func(match string) string {
+		return reHexInAttr.ReplaceAllStringFunc(match, func(hex string) string {
+			return replaceColor(hex)
+		})
+	})
+
+	// Handle SVGs that use "black" or "Black" as named color
+	svgStr = strings.ReplaceAll(svgStr, `fill="black"`, `fill="`+replaceColor("#000000")+`"`)
+	svgStr = strings.ReplaceAll(svgStr, `fill="Black"`, `fill="`+replaceColor("#000000")+`"`)
+	svgStr = strings.ReplaceAll(svgStr, `stroke="black"`, `stroke="`+replaceColor("#000000")+`"`)
+
+	// Handle SVGs with no explicit fill (default is black) — add fill to root <svg>
+	// Only if the SVG doesn't already have a fill on the root element
+	if !strings.Contains(svgStr[:min(500, len(svgStr))], "fill=") {
+		svgStr = strings.Replace(svgStr, "<svg", `<svg fill="`+replaceColor("#000000")+`"`, 1)
+	}
+
+	encoded := base64.StdEncoding.EncodeToString([]byte(svgStr))
+	return "data:" + header + "," + encoded, nil
+}
+
+var (
+	reSVGFill   = regexp.MustCompile(`(?i)(?:fill|stroke)\s*=\s*"[^"]*"`)
+	reHexInAttr = regexp.MustCompile(`#[0-9a-fA-F]{3,6}\b`)
+	reSVGStyle  = regexp.MustCompile(`(?i)style\s*=\s*"[^"]*"`)
+)
 
 func grayscale(r, g, b uint8) float64 {
 	return 0.299*float64(r) + 0.587*float64(g) + 0.114*float64(b)
