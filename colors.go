@@ -1,4 +1,4 @@
-// Copyright 2024 Julian Marshall
+// Copyright 2026 Julian Marshall
 // Licensed under the Apache License, Version 2.0
 
 package branding
