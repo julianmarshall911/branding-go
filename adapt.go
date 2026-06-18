@@ -27,15 +27,11 @@ func AdaptLogoForBackground(logoDataURL, navBgHex string) (string, error) {
 		return logoDataURL, nil
 	}
 	navGray := grayscale(navBg.R, navBg.G, navBg.B)
-
-	// Skip adaptation if nav background is light — logo is likely already visible
-	if navGray > 60 {
-		return logoDataURL, nil
-	}
+	isDarkBg := navGray <= 60
 
 	// SVGs need XML-level color replacement (can't do pixel manipulation)
 	if strings.Contains(logoDataURL, "image/svg") {
-		return adaptSVGForBackground(logoDataURL, navGray)
+		return adaptSVGForBackground(logoDataURL, navGray, isDarkBg)
 	}
 
 	// Decode raster data URL
@@ -72,24 +68,27 @@ func AdaptLogoForBackground(logoDataURL, navBgHex string) (string, error) {
 		bounds = nrgba.Bounds()
 	}
 
-	// Adapt pixels: if a pixel is dark and desaturated, it won't be visible
-	// on the dark nav. Saturated colors (reds, blues) are left alone.
-	darkThreshold := 80.0
+	// Adapt pixels that lack contrast against the background.
+	// Saturated colors are left alone — they work on any background.
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
 			c := nrgba.NRGBAAt(x, y)
 			if c.A < 10 {
 				continue // skip transparent
 			}
-			// Skip colorful pixels — they have visual contrast even if dark
 			rgb := RGB{c.R, c.G, c.B}
 			if rgb.ToHSL().S > 0.3 {
-				continue
+				continue // colorful, keep as-is
 			}
 			pxGray := grayscale(c.R, c.G, c.B)
-			if pxGray < darkThreshold {
+			if isDarkBg && pxGray < 80 {
+				// Dark bg: lighten dark desaturated pixels
 				lightGray := uint8(math.Max(180, math.Min(255, 255-pxGray)))
 				nrgba.SetNRGBA(x, y, color.NRGBA{R: lightGray, G: lightGray, B: lightGray, A: c.A})
+			} else if !isDarkBg && pxGray > 180 {
+				// Light bg: darken light desaturated pixels
+				darkGray := uint8(math.Max(0, math.Min(80, 255-pxGray)))
+				nrgba.SetNRGBA(x, y, color.NRGBA{R: darkGray, G: darkGray, B: darkGray, A: c.A})
 			}
 		}
 	}
@@ -104,9 +103,9 @@ func AdaptLogoForBackground(logoDataURL, navBgHex string) (string, error) {
 	return "data:image/png;base64," + encoded, nil
 }
 
-// adaptSVGForBackground parses SVG XML and replaces dark fill/stroke colors
-// with lighter versions, preserving colors that already have good contrast.
-func adaptSVGForBackground(logoDataURL string, navGray float64) (string, error) {
+// adaptSVGForBackground parses SVG XML and replaces colors that lack contrast
+// against the background, preserving colorful/saturated colors.
+func adaptSVGForBackground(logoDataURL string, navGray float64, isDarkBg bool) (string, error) {
 	// Extract SVG content from data URL
 	comma := strings.Index(logoDataURL, ",")
 	if comma < 0 {
@@ -119,11 +118,6 @@ func adaptSVGForBackground(logoDataURL string, navGray float64) (string, error) 
 	}
 	svgStr := string(svgBytes)
 
-	// A color is "too dark to see" if it's dark AND close to the dark nav background.
-	// Both the color and the nav must be in the dark range (< 80 brightness).
-	threshold := 80.0 // any color with brightness below this on a dark nav gets lightened
-
-	// Replace hex colors in fill and stroke attributes
 	replaceColor := func(hex string) string {
 		c, err := ParseHex(hex)
 		if err != nil {
@@ -131,17 +125,24 @@ func adaptSVGForBackground(logoDataURL string, navGray float64) (string, error) 
 		}
 		hsl := c.ToHSL()
 		pxGray := grayscale(c.R, c.G, c.B)
-		// Keep colorful/saturated colors — they have visual contrast even if dark
+		// Keep colorful/saturated colors — they have visual contrast on any background
 		if hsl.S > 0.3 {
 			return hex
 		}
-		// Replace if the color is dark (below threshold) — it won't be visible on the dark nav
-		if pxGray < threshold {
-			// Invert to a light version
-			lightGray := uint8(math.Max(180, math.Min(255, 255-pxGray)))
-			return fmt.Sprintf("#%02x%02x%02x", lightGray, lightGray, lightGray)
+		if isDarkBg {
+			// Dark background: lighten dark desaturated colors
+			if pxGray < 80 {
+				lightGray := uint8(math.Max(180, math.Min(255, 255-pxGray)))
+				return fmt.Sprintf("#%02x%02x%02x", lightGray, lightGray, lightGray)
+			}
+		} else {
+			// Light background: darken light desaturated colors
+			if pxGray > 180 {
+				darkGray := uint8(math.Max(0, math.Min(80, 255-pxGray)))
+				return fmt.Sprintf("#%02x%02x%02x", darkGray, darkGray, darkGray)
+			}
 		}
-		return hex // bright enough, keep original
+		return hex
 	}
 
 	// Replace colors in fill="..." and stroke="..." attributes
@@ -158,13 +159,15 @@ func adaptSVGForBackground(logoDataURL string, navGray float64) (string, error) 
 		})
 	})
 
-	// Handle SVGs that use "black" or "Black" as named color
+	// Handle named colors
 	svgStr = strings.ReplaceAll(svgStr, `fill="black"`, `fill="`+replaceColor("#000000")+`"`)
 	svgStr = strings.ReplaceAll(svgStr, `fill="Black"`, `fill="`+replaceColor("#000000")+`"`)
 	svgStr = strings.ReplaceAll(svgStr, `stroke="black"`, `stroke="`+replaceColor("#000000")+`"`)
+	svgStr = strings.ReplaceAll(svgStr, `fill="white"`, `fill="`+replaceColor("#ffffff")+`"`)
+	svgStr = strings.ReplaceAll(svgStr, `fill="White"`, `fill="`+replaceColor("#ffffff")+`"`)
+	svgStr = strings.ReplaceAll(svgStr, `stroke="white"`, `stroke="`+replaceColor("#ffffff")+`"`)
 
 	// Handle SVGs with no explicit fill (default is black) — add fill to root <svg>
-	// Only if the SVG doesn't already have a fill on the root element
 	if !strings.Contains(svgStr[:min(500, len(svgStr))], "fill=") {
 		svgStr = strings.Replace(svgStr, "<svg", `<svg fill="`+replaceColor("#000000")+`"`, 1)
 	}
