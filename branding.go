@@ -33,8 +33,12 @@ type Result struct {
 	LogoDataURL string `json:"logo_data_url,omitempty"`
 	// FaviconURL is the absolute URL of the site's favicon.
 	FaviconURL string `json:"favicon_url,omitempty"`
-	// Palette is the derived color palette from the site's branding.
+	// Palette is the dark-mode palette (backward compatible).
 	Palette Palette `json:"palette"`
+	// Themes contains both dark and light palettes.
+	Themes DualPalette `json:"themes"`
+	// Colors is the full set of extracted brand colors (unfiltered).
+	Colors BrandColors `json:"colors"`
 }
 
 var httpClient = &http.Client{
@@ -86,15 +90,22 @@ func Extract(siteURL string) (*Result, error) {
 	// Extract favicon
 	result.FaviconURL = extractFavicon(html, origin)
 
-	// Extract accent color from CSS first (preferred over logo)
-	accent := ExtractAccentFromHTML(html)
-	if accent != "" {
-		result.Palette = DerivePalette(accent)
-	} else {
-		result.Palette = DefaultPalette()
-	}
+	// Extract all brand colors (unbiased)
+	result.Colors = ExtractAllColors(html)
 
-	// Detect and adapt logo for the derived nav background
+	// Generate dual themes from extracted colors
+	if len(result.Colors.Colors) > 0 {
+		result.Themes = DeriveThemes(&result.Colors)
+	} else {
+		result.Themes = DualPalette{
+			Dark:  DefaultPalette(),
+			Light: DefaultLightPalette(),
+		}
+	}
+	// Backward compatible: Palette = dark theme
+	result.Palette = result.Themes.Dark
+
+	// Detect and adapt logo for the dark nav background
 	logoURL := detectLogo(html, origin)
 	if logoURL != "" {
 		if dataURL, err := downloadAsDataURL(logoURL); err == nil {
