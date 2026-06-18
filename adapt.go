@@ -77,7 +77,7 @@ func AdaptLogoForBackground(logoDataURL, navBgHex string) (string, error) {
 				continue // skip transparent
 			}
 			rgb := RGB{c.R, c.G, c.B}
-			if rgb.ToHSL().S > 0.3 {
+			if rgb.ToHSL().S > 0.2 {
 				continue // colorful, keep as-is
 			}
 			pxGray := grayscale(c.R, c.G, c.B)
@@ -125,19 +125,19 @@ func adaptSVGForBackground(logoDataURL string, navGray float64, isDarkBg bool) (
 		}
 		hsl := c.ToHSL()
 		pxGray := grayscale(c.R, c.G, c.B)
-		// Keep colorful/saturated colors — they have visual contrast on any background
-		if hsl.S > 0.3 {
+		// Keep clearly saturated colors — they have visual contrast on any background
+		if hsl.S > 0.2 {
 			return hex
 		}
 		if isDarkBg {
 			// Dark background: lighten dark desaturated colors
-			if pxGray < 80 {
+			if pxGray < 100 {
 				lightGray := uint8(math.Max(180, math.Min(255, 255-pxGray)))
 				return fmt.Sprintf("#%02x%02x%02x", lightGray, lightGray, lightGray)
 			}
 		} else {
 			// Light background: darken light desaturated colors
-			if pxGray > 180 {
+			if pxGray > 160 {
 				darkGray := uint8(math.Max(0, math.Min(80, 255-pxGray)))
 				return fmt.Sprintf("#%02x%02x%02x", darkGray, darkGray, darkGray)
 			}
