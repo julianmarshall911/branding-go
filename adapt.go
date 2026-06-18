@@ -68,27 +68,41 @@ func AdaptLogoForBackground(logoDataURL, navBgHex string) (string, error) {
 		bounds = nrgba.Bounds()
 	}
 
-	// Adapt pixels that lack contrast against the background.
-	// Saturated colors are left alone — they work on any background.
+	// Adapt pixels by checking their effective composited contrast against the background.
+	// Accounts for alpha transparency — a semi-transparent pixel on a similar background
+	// has poor contrast even if its raw color seems different.
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
 			c := nrgba.NRGBAAt(x, y)
 			if c.A < 10 {
-				continue // skip transparent
+				continue
 			}
-			rgb := RGB{c.R, c.G, c.B}
-			if rgb.ToHSL().S > 0.2 {
-				continue // colorful, keep as-is
-			}
-			pxGray := grayscale(c.R, c.G, c.B)
-			if isDarkBg && pxGray < 80 {
-				// Dark bg: lighten dark desaturated pixels
-				lightGray := uint8(math.Max(180, math.Min(255, 255-pxGray)))
-				nrgba.SetNRGBA(x, y, color.NRGBA{R: lightGray, G: lightGray, B: lightGray, A: c.A})
-			} else if !isDarkBg && pxGray > 180 {
-				// Light bg: darken light desaturated pixels
-				darkGray := uint8(math.Max(0, math.Min(80, 255-pxGray)))
-				nrgba.SetNRGBA(x, y, color.NRGBA{R: darkGray, G: darkGray, B: darkGray, A: c.A})
+
+			// Composite pixel on target background
+			alpha := float64(c.A) / 255.0
+			effR := alpha*float64(c.R) + (1-alpha)*float64(navBg.R)
+			effG := alpha*float64(c.G) + (1-alpha)*float64(navBg.G)
+			effB := alpha*float64(c.B) + (1-alpha)*float64(navBg.B)
+			effGray := 0.299*effR + 0.587*effG + 0.114*effB
+
+			contrast := math.Abs(effGray - navGray)
+			if contrast < 40 {
+				// Insufficient contrast — adjust
+				if isDarkBg {
+					// Brighten: boost RGB toward white, increase alpha
+					newR := uint8(math.Min(255, float64(c.R)+100))
+					newG := uint8(math.Min(255, float64(c.G)+100))
+					newB := uint8(math.Min(255, float64(c.B)+100))
+					newA := uint8(math.Min(255, float64(c.A)*2))
+					nrgba.SetNRGBA(x, y, color.NRGBA{R: newR, G: newG, B: newB, A: newA})
+				} else {
+					// Darken: reduce RGB toward black, increase alpha
+					newR := uint8(math.Max(0, float64(c.R)-100))
+					newG := uint8(math.Max(0, float64(c.G)-100))
+					newB := uint8(math.Max(0, float64(c.B)-100))
+					newA := uint8(math.Min(255, float64(c.A)*2))
+					nrgba.SetNRGBA(x, y, color.NRGBA{R: newR, G: newG, B: newB, A: newA})
+				}
 			}
 		}
 	}
