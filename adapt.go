@@ -71,6 +71,7 @@ func AdaptLogoForBackground(logoDataURL, navBgHex string) (string, error) {
 	// Adapt pixels by checking their effective composited contrast against the background.
 	// Accounts for alpha transparency — a semi-transparent pixel on a similar background
 	// has poor contrast even if its raw color seems different.
+	changed := false
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
 			c := nrgba.NRGBAAt(x, y)
@@ -89,22 +90,26 @@ func AdaptLogoForBackground(logoDataURL, navBgHex string) (string, error) {
 			if contrast < 40 {
 				// Insufficient contrast — adjust
 				if isDarkBg {
-					// Brighten: boost RGB toward white, increase alpha
 					newR := uint8(math.Min(255, float64(c.R)+100))
 					newG := uint8(math.Min(255, float64(c.G)+100))
 					newB := uint8(math.Min(255, float64(c.B)+100))
 					newA := uint8(math.Min(255, float64(c.A)*2))
 					nrgba.SetNRGBA(x, y, color.NRGBA{R: newR, G: newG, B: newB, A: newA})
 				} else {
-					// Darken: reduce RGB toward black, increase alpha
 					newR := uint8(math.Max(0, float64(c.R)-100))
 					newG := uint8(math.Max(0, float64(c.G)-100))
 					newB := uint8(math.Max(0, float64(c.B)-100))
 					newA := uint8(math.Min(255, float64(c.A)*2))
 					nrgba.SetNRGBA(x, y, color.NRGBA{R: newR, G: newG, B: newB, A: newA})
 				}
+				changed = true
 			}
 		}
+	}
+
+	// If no pixels needed adjustment, return original to avoid re-encoding artifacts
+	if !changed {
+		return logoDataURL, nil
 	}
 
 	// Encode as PNG data URL
