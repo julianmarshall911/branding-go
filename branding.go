@@ -78,11 +78,16 @@ func Extract(siteURL string) (*Result, error) {
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 2*1024*1024)) // 2MB limit
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 2*1024*1024))
 	if err != nil {
 		return nil, fmt.Errorf("read body: %w", err)
 	}
 	html := string(body)
+
+	// Detect bot protection pages (Cloudflare, etc.)
+	if isBotProtected(html) {
+		return nil, fmt.Errorf("this website uses bot protection — branding must be configured manually")
+	}
 
 	result := &Result{}
 	origin := parsed.Scheme + "://" + parsed.Host
@@ -115,6 +120,20 @@ func Extract(siteURL string) (*Result, error) {
 	}
 
 	return result, nil
+}
+
+// isBotProtected detects Cloudflare challenges and similar bot protection pages.
+func isBotProtected(html string) bool {
+	lower := strings.ToLower(html)
+	// Cloudflare challenge
+	if strings.Contains(lower, "just a moment") && strings.Contains(lower, "challenges.cloudflare.com") {
+		return true
+	}
+	// Generic challenge detection
+	if strings.Contains(lower, "checking your browser") || strings.Contains(lower, "verify you are human") {
+		return true
+	}
+	return false
 }
 
 // extractFavicon finds the best favicon URL from HTML.
