@@ -178,13 +178,26 @@ func adaptSVGForBackground(logoDataURL string, navGray float64, isDarkBg bool) (
 		})
 	})
 
-	// Handle named colors
+	// Replace colors inside <style>...</style> blocks (CSS class-based fills)
+	svgStr = reStyleBlock.ReplaceAllStringFunc(svgStr, func(match string) string {
+		return reHexInAttr.ReplaceAllStringFunc(match, func(hex string) string {
+			return replaceColor(hex)
+		})
+	})
+
+	// Handle named colors in attributes
 	svgStr = strings.ReplaceAll(svgStr, `fill="black"`, `fill="`+replaceColor("#000000")+`"`)
 	svgStr = strings.ReplaceAll(svgStr, `fill="Black"`, `fill="`+replaceColor("#000000")+`"`)
 	svgStr = strings.ReplaceAll(svgStr, `stroke="black"`, `stroke="`+replaceColor("#000000")+`"`)
 	svgStr = strings.ReplaceAll(svgStr, `fill="white"`, `fill="`+replaceColor("#ffffff")+`"`)
 	svgStr = strings.ReplaceAll(svgStr, `fill="White"`, `fill="`+replaceColor("#ffffff")+`"`)
 	svgStr = strings.ReplaceAll(svgStr, `stroke="white"`, `stroke="`+replaceColor("#ffffff")+`"`)
+
+	// Handle named colors in CSS (inside <style> blocks)
+	svgStr = strings.ReplaceAll(svgStr, "fill: white", "fill: "+replaceColor("#ffffff"))
+	svgStr = strings.ReplaceAll(svgStr, "fill: black", "fill: "+replaceColor("#000000"))
+	svgStr = strings.ReplaceAll(svgStr, "fill:white", "fill:"+replaceColor("#ffffff"))
+	svgStr = strings.ReplaceAll(svgStr, "fill:black", "fill:"+replaceColor("#000000"))
 
 	// Handle SVGs with no explicit fill (default is black) — add fill to root <svg>
 	if !strings.Contains(svgStr[:min(500, len(svgStr))], "fill=") {
@@ -196,9 +209,10 @@ func adaptSVGForBackground(logoDataURL string, navGray float64, isDarkBg bool) (
 }
 
 var (
-	reSVGFill   = regexp.MustCompile(`(?i)(?:fill|stroke)\s*=\s*"[^"]*"`)
-	reHexInAttr = regexp.MustCompile(`#[0-9a-fA-F]{3,6}\b`)
-	reSVGStyle  = regexp.MustCompile(`(?i)style\s*=\s*"[^"]*"`)
+	reSVGFill    = regexp.MustCompile(`(?i)(?:fill|stroke)\s*=\s*"[^"]*"`)
+	reHexInAttr  = regexp.MustCompile(`#[0-9a-fA-F]{3,6}\b`)
+	reSVGStyle   = regexp.MustCompile(`(?i)style\s*=\s*"[^"]*"`)
+	reStyleBlock = regexp.MustCompile(`(?is)<style[^>]*>.*?</style>`)
 )
 
 func grayscale(r, g, b uint8) float64 {
