@@ -78,6 +78,14 @@ func Extract(siteURL string) (*Result, error) {
 	}
 	defer resp.Body.Close()
 
+	// Non-success status codes indicate the site is blocking us or unavailable
+	if resp.StatusCode == 403 {
+		return nil, fmt.Errorf("website returned 403 Forbidden — branding must be configured manually")
+	}
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("website returned HTTP %d", resp.StatusCode)
+	}
+
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 2*1024*1024))
 	if err != nil {
 		return nil, fmt.Errorf("read body: %w", err)
