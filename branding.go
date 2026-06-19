@@ -105,17 +105,12 @@ func Extract(siteURL string) (*Result, error) {
 	// Backward compatible: Palette = dark theme
 	result.Palette = result.Themes.Dark
 
-	// Detect and adapt logo for the dark nav background
+	// Detect logo — store the original unadapted version.
+	// Callers are responsible for adapting for their specific background.
 	logoURL := detectLogo(html, origin)
 	if logoURL != "" {
 		if dataURL, err := downloadAsDataURL(logoURL); err == nil {
-			// Adapt logo pixels for visibility on the dark nav background
-			adapted, err := AdaptLogoForBackground(dataURL, result.Palette.NavBg)
-			if err == nil && adapted != "" {
-				result.LogoDataURL = adapted
-			} else {
-				result.LogoDataURL = dataURL
-			}
+			result.LogoDataURL = dataURL
 		}
 	}
 
